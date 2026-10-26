@@ -10,7 +10,15 @@ does not invoke kubeadm. K3s/RKE2, MicroK8s and CRI-O are not supported here.
 The node needs Linux amd64/arm64, systemd, KVM, containerd >= 2.2 and
 `erofs-utils >= 1.8.2`. GPU Operator, NFD, kata-device-provisioner,
 kata-device-plugin, and nydus are not dependencies of this CPU package.
-End-to-end validation covers Ubuntu 26.04 on arm64; amd64 is not yet validated.
+End-to-end validation covers Ubuntu 26.04 on arm64 with erofs-utils 1.9.1;
+amd64 is not yet validated.
+
+Stock Ubuntu 24.04 is insufficient: its
+[erofs-utils 1.7.1 package](https://packages.ubuntu.com/noble/erofs-utils)
+lacks the required `mkfs.erofs` options. Use Ubuntu 26.04 for the validated path.
+Using 24.04 requires separately provisioning compatible erofs-utils and
+containerd versions. This package checks prerequisites through kata-deploy's
+host-check stage; it does not upgrade the host's erofs-utils or containerd.
 
 ## Package versions are Kata versions
 
