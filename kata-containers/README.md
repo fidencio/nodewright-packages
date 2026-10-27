@@ -1,5 +1,8 @@
 # Kata Containers package
 
+For the complete GPU stack on this test branch, start with the
+[NodeWright-managed stack POC](stack/README.md).
+
 The `kata-containers` package defaults to `qemu-nvidia-cpu-runtime-rs`,
 registered with containerd as `kata-qemu-nvidia-cpu-runtime-rs`. It also supports
 the non-confidential `qemu-nvidia-gpu-runtime-rs` profile described in

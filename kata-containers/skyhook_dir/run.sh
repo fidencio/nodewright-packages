@@ -39,6 +39,17 @@ if [[ -z ${CONTAINER_RUNTIME_VERSION:-} ]]; then
     export CONTAINER_RUNTIME_VERSION="containerd://${containerd_version}"
 fi
 
+if [[ -f "${STEP_ROOT:?}/stack-mode" ]]; then
+    KATA_STACK_MODE="$(cat "${STEP_ROOT}/stack-mode")"
+    export KATA_STACK_MODE
+    case "${KATA_STACK_MODE}" in
+        off) export KATA_RUNTIME="${KATA_RUNTIME:-qemu-nvidia-gpu-runtime-rs}" ;;
+        on) : "${KATA_RUNTIME:?select the SNP or TDX GPU Rust runtime}" ;;
+        ppcie) export KATA_RUNTIME="${KATA_RUNTIME:-qemu-nvidia-gpu-tdx-runtime-rs}" ;;
+        *) echo 'unsupported stack mode' >&2; exit 1 ;;
+    esac
+fi
+
 bash "${STEP_ROOT:?}/run-inner.sh" validate
 runtime="${KATA_RUNTIME:-qemu-nvidia-cpu-runtime-rs}"
 case "${action}" in

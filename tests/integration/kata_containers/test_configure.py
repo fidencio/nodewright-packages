@@ -191,7 +191,7 @@ def test_cc_manifests_require_discovery_provisioning_and_runtime_completion(tee,
     assert labels["kubernetes.io/arch"] == "amd64"
     assert labels["nodewright.nvidia.com/kata-profile"] == name
     assert resource["spec"]["nodeSelectors"]["matchExpressions"] == [
-        {"key": mode_key, "operator": "In", "values": ["on", "ppcie"]}]
+        {"key": mode_key, "operator": "In", "values": ["on"] if tee == "snp" else ["on", "ppcie"]}]
     package = resource["spec"]["packages"]["kata-containers"]
     assert package["version"] == json.loads((PACKAGE / "config.json").read_text())["package_version"]
     env = {entry["name"]: entry.get("value") for entry in package["env"]}

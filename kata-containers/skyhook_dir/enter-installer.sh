@@ -18,8 +18,8 @@
 set -euo pipefail
 
 case "${1:-}" in
-    install|uninstall) ;;
-    *) echo 'expected install or uninstall' >&2; exit 2 ;;
+    install|uninstall|stack) ;;
+    *) echo 'expected install, uninstall or stack' >&2; exit 2 ;;
 esac
 
 # Called by run.sh after unshare: these mounts must never propagate to the host.
@@ -33,4 +33,8 @@ done
 
 # The existing adapter reads ConfigMaps through the host root mounted at /root.
 export SKYHOOK_DIR="/root${SKYHOOK_DIR:?}"
+if [[ "$1" == stack ]]; then
+    shift
+    exec chroot "${rootfs}" /usr/bin/python3 /usr/local/libexec/kata-stack.py "$@"
+fi
 exec chroot "${rootfs}" /bin/bash /usr/local/bin/nodewright-kata-stage "$@"

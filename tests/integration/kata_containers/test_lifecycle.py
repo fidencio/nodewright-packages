@@ -24,7 +24,7 @@ from tests.helpers.docker_test import DockerTestRunner
 
 
 STUB = Path(__file__).parent / "fakes/host-command.sh"
-EXTRA_FILES = [(STUB, f"test-bin/{name}") for name in ("mount", "mkdir", "touch", "kata-deploy", "uname", "unshare", "chroot", "ctr", "systemctl")]
+EXTRA_FILES = [(STUB, f"test-bin/{name}") for name in ("mount", "mkdir", "touch", "kata-deploy", "uname", "unshare", "chroot", "ctr", "systemctl", "kata-device-provisioner")]
 BASE_ENV = {
     "PATH": "/skyhook-package/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "TRACE": "/tmp/kata-trace", "ENV_TRACE": "/tmp/kata-env", "NODE_NAME": "test-node",
@@ -291,3 +291,33 @@ def test_cc_removed_check_rejects_leftover_snapshotter(base_image, runtime, left
         assert runner.container.exec_run(command).exit_code != 0
         assert runner.container.exec_run(["/bin/rm", leftover]).exit_code == 0
         assert runner.container.exec_run(command).exit_code == 0
+
+
+@pytest.mark.parametrize("mode,runtime", [
+    ("off", "qemu-nvidia-gpu-runtime-rs"), ("on", "qemu-nvidia-gpu-snp-runtime-rs"),
+    ("on", "qemu-nvidia-gpu-tdx-runtime-rs"), ("ppcie", "qemu-nvidia-gpu-tdx-runtime-rs"),
+])
+def test_stack_provisions_before_runtime_artifacts(base_image, mode, runtime):
+    result, lines, _ = run_action(base_image, env={
+        "KATA_STACK_MODE": mode, "KATA_RUNTIME": runtime, "TEST_ARCH": "x86_64",
+        "KATA_STACK_TOKEN": "must-not-reach-hardware", "KATA_STACK_CA": "test-ca",
+    })
+    assert result.exit_code == 0, result.stdout
+    provision = f"kata-device-provisioner apply --mode {mode} --host-root /root"
+    assert lines.index(provision) < lines.index("kata-deploy install-stage-artifacts")
+
+
+def test_ppcie_snp_is_rejected_before_mounting(base_image):
+    result, lines, _ = run_action(base_image, env={
+        "KATA_STACK_MODE": "ppcie", "KATA_RUNTIME": "qemu-nvidia-gpu-snp-runtime-rs", "TEST_ARCH": "x86_64"})
+    assert result.exit_code != 0
+    assert "PPCIE requires TDX" in result.stdout
+    assert lines == []
+
+
+def test_failed_provisioning_stops_runtime_installation(base_image):
+    result, lines, _ = run_action(base_image, env={
+        "KATA_STACK_MODE": "off", "KATA_RUNTIME": "qemu-nvidia-gpu-runtime-rs",
+        "FAIL_COMMAND": "kata-device-provisioner apply --mode off --host-root /root"})
+    assert result.exit_code == 7
+    assert "kata-deploy install-stage-artifacts" not in lines

@@ -32,7 +32,6 @@ spec:
       operator: In
       values:
       - 'on'
-      - ppcie
   interruptionBudget:
     count: 1
   packages:

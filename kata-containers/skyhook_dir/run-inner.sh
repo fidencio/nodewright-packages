@@ -18,6 +18,9 @@
 
 set -euo pipefail
 
+# Hardware tools never receive the cluster bootstrap credentials.
+unset KATA_STACK_TOKEN KATA_STACK_CA
+
 case "${1:-}" in
     validate|install|uninstall|check-installed|check-removed) action=$1 ;;
     *) echo "usage: $0 {validate|install|uninstall|check-installed|check-removed}" >&2; exit 2 ;;
@@ -62,6 +65,12 @@ case "${runtime}" in
         ;;
     *) echo 'KATA_RUNTIME must select a supported NVIDIA Rust runtime' >&2; exit 1 ;;
 esac
+if [[ -n ${KATA_STACK_MODE:-} ]]; then
+    case "${KATA_STACK_MODE}:${runtime}" in
+        off:qemu-nvidia-gpu-runtime-rs|on:qemu-nvidia-gpu-snp-runtime-rs|on:qemu-nvidia-gpu-tdx-runtime-rs|ppcie:qemu-nvidia-gpu-tdx-runtime-rs) ;;
+        *) echo 'incompatible full-stack GPU mode/runtime; PPCIE requires TDX' >&2; exit 1 ;;
+    esac
+fi
 export SHIMS_X86_64="$runtime" SHIMS_AARCH64="$runtime"
 export DEFAULT_SHIM_X86_64="$runtime" DEFAULT_SHIM_AARCH64="$runtime"
 export SNAPSHOTTER_HANDLER_MAPPING_X86_64="${runtime}:${snapshotter}"
@@ -116,6 +125,10 @@ case "$action" in
         kata-deploy install-stage-selinux-policy
         kata-deploy install-stage-load-kernel-modules
         kata-deploy install-stage-host-check
+        if [[ -n ${KATA_STACK_MODE:-} ]]; then
+            env -u KATA_STACK_TOKEN -u KATA_STACK_CA kata-device-provisioner apply \
+                --mode "${KATA_STACK_MODE}" --host-root /root
+        fi
         kata-deploy install-stage-artifacts
         kata-deploy install-stage-cri
         ;;
@@ -123,6 +136,9 @@ case "$action" in
         kata-deploy install-stage-selinux-policy
         kata-deploy cleanup-stage-revert-cri
         kata-deploy cleanup-stage-remove-artifacts
+        if [[ -n ${KATA_STACK_MODE:-} ]]; then
+            env -u KATA_STACK_TOKEN -u KATA_STACK_CA kata-device-provisioner uninstall --host-root /root
+        fi
         ;;
     check-installed)
         test -x /opt/kata/runtime-rs/bin/containerd-shim-kata-v2

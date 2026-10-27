@@ -29,6 +29,12 @@ fi
 if [[ "${command}" == unshare ]]; then
     printf '%s' "${CONTAINER_RUNTIME_VERSION}" > "${ENV_TRACE}"
 fi
+if [[ "${command}" == kata-deploy || "${command}" == kata-device-provisioner ]]; then
+    if [[ -n ${KATA_STACK_MODE:-} && -n ${KATA_STACK_TOKEN:-}${KATA_STACK_CA:-} ]]; then
+        echo 'cluster credentials reached a hardware tool' >&2
+        exit 9
+    fi
+fi
 if [[ "${command}" == kata-deploy ]]; then
     printf '%s\n' "${SHIMS_AARCH64}|${EXPERIMENTAL_SETUP_SNAPSHOTTER}|${SNAPSHOTTER_HANDLER_MAPPING_AARCH64}|${CONTAINERD_CONFIG_FILE_NAME}" > "${ENV_TRACE}"
 fi

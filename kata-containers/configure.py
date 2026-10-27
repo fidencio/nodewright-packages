@@ -39,7 +39,7 @@ def kata_version(value):
     return value
 
 
-def package_config(template, payload_version, expected=None):
+def package_config(template, payload_version, expected=None, stack_mode=None):
     version = kata_version(payload_version)
     if expected is not None and version != kata_version(expected):
         raise ValueError(f"requested Kata {expected} differs from payload Kata {version}")
@@ -47,6 +47,25 @@ def package_config(template, payload_version, expected=None):
     if kata_version(config["package_version"]) != version:
         raise ValueError(f"package Kata {config['package_version']} differs from payload Kata {version}")
     config["package_version"] = version
+    if stack_mode is not None:
+        if stack_mode not in ("off", "on", "ppcie"):
+            raise ValueError("stack mode must be off, on or ppcie")
+        def step(action, check=False):
+            return {"name": f"stack-{action}", "path": "stack.sh", "arguments": [action],
+                    "returncodes": [0], "on_host": True, "idempotence": check,
+                    "upgrade_step": False}
+        for stage in ("apply", "upgrade"):
+            config["modes"][stage].append(step("ensure-nfd"))
+            config["modes"][stage].append(step("wait-hardware"))
+            config["modes"][f"{stage}-check"].append(step("check-nfd", True))
+        config["modes"]["config"].insert(0, step("clear-ready"))
+        config["modes"]["config"].append(step("publish-mode"))
+        config["modes"]["config-check"].append(step("check-mode", True))
+        config["modes"]["post-interrupt"].append(step("ensure-plugin"))
+        config["modes"]["post-interrupt-check"].append(step("check-plugin", True))
+        config["modes"]["uninstall"].insert(0, step("clear-ready"))
+        config["modes"]["uninstall"].append(step("finish-uninstall"))
+        config["modes"]["uninstall-check"].append(step("check-uninstalled", True))
     return config
 
 
@@ -56,10 +75,11 @@ def main():
     parser.add_argument("--version-file", type=Path, required=True)
     parser.add_argument("--expected-version")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--stack-mode", choices=("off", "on", "ppcie"))
     args = parser.parse_args()
     try:
         config = package_config(args.template.read_text(), args.version_file.read_text(),
-                                args.expected_version)
+                                args.expected_version, args.stack_mode)
         args.output.write_text(json.dumps(config, indent=2) + "\n")
     except (ValueError, OSError) as error:
         parser.error(str(error))
