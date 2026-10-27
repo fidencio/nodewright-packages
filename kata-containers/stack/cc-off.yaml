@@ -84,7 +84,7 @@ spec:
       configMap:
         containerd-user-dropin.toml: "[plugins.'io.containerd.snapshotter.v1.erofs']\n\
           \  enable_fsverity = false\n"
-      containerSHA: sha256:85f46f0254d99ec1eb539c30b95c7d3f9ba29178e924fbf69040336f877bf220
+      containerSHA: sha256:2cac473eb27bc56cfd02491ccfa8764f36566c0da8d468511f15c6c565f43b61
       stageTimeout: 45m
 ---
 apiVersion: node.k8s.io/v1

@@ -73,7 +73,7 @@ spec:
           secretKeyRef:
             name: kata-stack-installer-token
             key: ca.crt
-      containerSHA: sha256:abddb40ebf3c19167f8daeb4932c44d7cfebe93c5c1b8c5d61da978f45577f07
+      containerSHA: sha256:e25b131c23d9f28f668a556b9896412dfc8b79fc64f9bbe9a1ec736d605607f3
       stageTimeout: 45m
 ---
 apiVersion: node.k8s.io/v1

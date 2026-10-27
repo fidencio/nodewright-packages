@@ -18,9 +18,9 @@ The manifests pin their immutable digests rather than relying on tags.
 
 | Mode | Tag | Architectures |
 | --- | --- | --- |
-| CC-off | `nodewright-4.3.1-cc-off-4bcf9b7` | amd64, arm64 |
-| CC-on | `nodewright-4.3.1-cc-on-4bcf9b7` | amd64 |
-| PPCIE | `nodewright-4.3.1-ppcie-4bcf9b7` | amd64 |
+| CC-off | `nodewright-4.3.1-cc-off-24e6a8e` | amd64, arm64 |
+| CC-on | `nodewright-4.3.1-cc-on-24e6a8e` | amd64 |
+| PPCIE | `nodewright-4.3.1-ppcie-24e6a8e` | amd64 |
 
 ## Requirements
 
