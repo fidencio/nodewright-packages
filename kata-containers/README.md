@@ -1,17 +1,20 @@
 # Kata Containers package
 
-The `kata-containers` package in `kata-containers/` supports
-only `qemu-nvidia-cpu-runtime-rs`, registered with containerd as
-`kata-qemu-nvidia-cpu-runtime-rs`. It uses standalone
+The `kata-containers` package defaults to `qemu-nvidia-cpu-runtime-rs`,
+registered with containerd as `kata-qemu-nvidia-cpu-runtime-rs`. It also supports
+the non-confidential `qemu-nvidia-gpu-runtime-rs` profile described in
+[GPU deployment](GPU.md). It uses standalone
 containerd with `containerd.service`, EROFS memory mode and dm-verity, and the
 default `/opt/kata` paths. The tested Kubernetes setup uses kubeadm; the package
 does not invoke kubeadm. K3s/RKE2, MicroK8s and CRI-O are not supported here.
 
 The node needs Linux amd64/arm64, systemd, KVM, containerd >= 2.2 and
-`erofs-utils >= 1.8.2`. GPU Operator, NFD, kata-device-provisioner,
-kata-device-plugin, and nydus are not dependencies of this CPU package.
-End-to-end validation covers Ubuntu 26.04 on arm64 with erofs-utils 1.9.1;
-amd64 is not yet validated.
+`erofs-utils >= 1.8.2`. The CPU profile has no GPU dependencies. The GPU profile
+requires kata-device-plugin and externally prepared passthrough devices.
+GPU Operator, NFD, kata-device-provisioner and nydus are not dependencies of
+either profile.
+CPU end-to-end validation covers Ubuntu 26.04 on arm64 with erofs-utils 1.9.1.
+GPU passthrough and amd64 execution have not been validated on hardware.
 
 Stock Ubuntu 24.04 is insufficient: its
 [erofs-utils 1.7.1 package](https://packages.ubuntu.com/noble/erofs-utils)
@@ -135,11 +138,14 @@ so its configuration can be cleaned up, then install with the new value.
 
 ## Configuration and lifecycle
 
-The adapter explicitly selects the NVIDIA CPU Rust shim and EROFS. The
+The adapter selects one NVIDIA Rust shim and EROFS. `KATA_RUNTIME` defaults to
+`qemu-nvidia-cpu-runtime-rs`; the GPU manifest selects
+`qemu-nvidia-gpu-runtime-rs`. Other runtimes, including SNP and TDX, are rejected. The
 `containerd-user-dropin.toml` ConfigMap key disables host fs-verity for broad
 host filesystem compatibility, matching Kata's NVIDIA profile; guest dm-verity
 remains enabled. Runtime overrides use
-`dropin-qemu-nvidia-cpu-runtime-rs.toml`.
+`dropin-qemu-nvidia-cpu-runtime-rs.toml` or
+`dropin-qemu-nvidia-gpu-runtime-rs.toml`, matching the selected profile.
 
 Apply/upgrade validates the configuration. The config stage runs the finite
 installer, including when ConfigMap values change without a Kata version bump.

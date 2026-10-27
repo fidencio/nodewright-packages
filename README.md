@@ -135,7 +135,9 @@ A fail-closed package that exposes an existing host mount at a stable second pat
 
 Installs, configures, upgrades and removes Kata's `qemu-nvidia-cpu-runtime-rs`
 through NodeWright's rollout and drain controls. Package versions follow the Kata
-release. GPU Operator and GPU provisioning components are not dependencies.
+release. A non-confidential GPU profile adds a separately pinned
+`kata-device-plugin` Helm release and requires preconfigured passthrough devices.
+GPU Operator and NFD are not dependencies.
 
 See the [package guide](kata-containers/README.md) for requirements and deployment.
 
