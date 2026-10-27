@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Check package versions and architecture-specific deployment manifests."""
+"""Check package versions and CPU/GPU deployment manifests."""
 
 import json
 from pathlib import Path
@@ -117,3 +117,31 @@ def test_runtimeclass_requires_installation_on_supported_nodes(architecture, com
         node[status_key] = "complete"
     eligible = all(node.get(key) == value for key, value in runtime["scheduling"]["nodeSelector"].items())
     assert eligible == (complete and architecture in ("amd64", "arm64"))
+
+
+def test_gpu_manifests_keep_cpu_and_gpu_nodes_disjoint():
+    cpu = yaml.safe_load((PACKAGE / "nodewright.yaml").read_text())
+    gpu = yaml.safe_load((PACKAGE / "nodewright-gpu.yaml").read_text())
+    runtime = yaml.safe_load((PACKAGE / "nvidia-gpu-runtimeclass.yaml").read_text())
+    plugin = yaml.safe_load((PACKAGE / "kata-device-plugin.values.yaml").read_text())
+    pod = yaml.safe_load((PACKAGE / "gpu-pod.yaml").read_text())
+    assert gpu["metadata"]["name"] == "kata-containers-gpu"
+    assert cpu["spec"]["nodeSelectors"]["matchLabels"]["nodewright.nvidia.com/kata-profile"] != (
+        gpu["spec"]["nodeSelectors"]["matchLabels"]["nodewright.nvidia.com/kata-profile"])
+    assert gpu["spec"]["nodeSelectors"]["matchExpressions"] == cpu["spec"]["nodeSelectors"]["matchExpressions"]
+    package = gpu["spec"]["packages"]["kata-containers"]
+    assert package["image"] == cpu["spec"]["packages"]["kata-containers"]["image"]
+    assert package["version"] == cpu["spec"]["packages"]["kata-containers"]["version"]
+    assert "dependsOn" not in package
+    assert "agentImageOverride" not in package
+    env = {entry["name"]: entry.get("value") for entry in package["env"]}
+    assert env["KATA_RUNTIME"] == "qemu-nvidia-gpu-runtime-rs"
+    assert "CONTAINER_RUNTIME_VERSION" not in env
+    assert runtime["handler"] == "kata-qemu-nvidia-gpu-runtime-rs"
+    assert pod["spec"]["runtimeClassName"] == runtime["metadata"]["name"]
+    assert pod["spec"]["containers"][0]["resources"]["limits"] == {"nvidia.com/gpu": 1}
+    completion = f"nodewright.nvidia.com/status_{gpu['metadata']['name']}"
+    assert runtime["scheduling"]["nodeSelector"] == {"kubernetes.io/os": "linux", completion: "complete"}
+    assert plugin["nodeSelector"] == {
+        "katacontainers.io/kata-runtime": None, "kubernetes.io/os": "linux", completion: "complete"}
+    assert plugin["resourceNaming"] == "alias"
