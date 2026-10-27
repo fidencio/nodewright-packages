@@ -15,8 +15,9 @@
 # limitations under the License.
 
 
-# Pin the Kata payload independently of the operator-managed agent.
-ARG KATA_DEPLOY_IMAGE=ghcr.io/kata-containers/kata-deploy:4.3.1@sha256:c8bb93f47fbfd5621eb707cc9ea92ae7cacf38ac8f8b9b7fa9f73787b763504c
+# Pin the multi-platform index, not an individual architecture manifest.
+# Keep the Kata payload independent of the operator-managed agent.
+ARG KATA_DEPLOY_IMAGE=ghcr.io/kata-containers/kata-deploy:4.3.1@sha256:9f6bbd0972e6fa8c99f5a86b24503032cb87be602d22e830d1c917ba31b4db9f
 ARG KATA_PROVISIONER_IMAGE=ghcr.io/kata-containers/kata-device-provisioner:0.1.0-alpha.1@sha256:a3d9206ad05ed667eb8cd4fc0bb066d2a402ced0ffb3226fc8b18dfb49f422ff
 FROM ${KATA_DEPLOY_IMAGE} AS kata
 FROM ${KATA_PROVISIONER_IMAGE} AS provisioner
@@ -70,6 +71,11 @@ COPY skyhook_dir/stack-manager.py /usr/local/libexec/kata-stack.py
 COPY stack-gpu-rule.yaml /opt/kata-stack/gpu-rule.yaml
 COPY tee-node-feature-rule.yaml /opt/kata-stack/tee-rule.yaml
 COPY --from=kata /usr/bin/kata-deploy /usr/bin/kata-deploy
+COPY check-architecture.py /tmp/check-architecture.py
+# Execution under binfmt emulation can hide a foreign-architecture payload.
+RUN python3 /tmp/check-architecture.py "${TARGETARCH}" \
+        /usr/bin/kata-deploy /usr/local/bin/kata-device-provisioner \
+        /usr/local/bin/helm /usr/local/bin/kubectl && rm /tmp/check-architecture.py
 COPY --from=kata /opt/kata-artifacts /opt/kata-artifacts
 COPY skyhook_dir/run-inner.sh /usr/local/bin/nodewright-kata-stage
 RUN mkdir -p /root /host /proc /sys /dev /custom-configs

@@ -33,6 +33,28 @@ helm upgrade --install nodewright \
   --version v0.20.0 --namespace nodewright --create-namespace --wait
 ```
 
+For a single-node POC, the controller must tolerate the cordoned node so it
+can keep managing the drain. Keep two replicas, as required by the chart's
+PodDisruptionBudget, and apply these operator settings:
+
+```bash
+cat > /tmp/nodewright-single-node.yaml <<'EOF'
+controllerManager:
+  replicas: 2
+  tolerations:
+    - key: node.kubernetes.io/unschedulable
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+EOF
+helm upgrade nodewright \
+  oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --version v0.20.0 --namespace nodewright --reuse-values \
+  -f /tmp/nodewright-single-node.yaml --wait --timeout 5m
+```
+
 Use the [common host requirements](../README.md#install), including
 KVM and IOMMU/IOMMUFD support. CC-off uses the EROFS snapshotter and needs
 containerd 2.2 or newer and erofs-utils 1.8.2 or newer. CC-on and PPCIE install
@@ -84,8 +106,8 @@ A pool can be selected with `kubectl label nodes -l <existing-pool-label>=<value
 in place of `kubectl label node <node>`. New matching nodes are provisioned
 through NodeWright reconciliation; no additional Helm command is needed.
 
-Wait until NodeWright reports `complete` for every selected node. This can
-take up to 45 minutes per stage when a GPU mode change is required. The node
+Wait until NodeWright reports `complete` for every selected node. Each stage attempt
+has a 45-minute timeout; retries can extend the total time. The node
 is drained before hardware changes. NFD and the device plugin tolerate the
 cordoned node. Runtime readiness is published only after the plugin is Ready
 and the node advertises GPU capacity:
@@ -147,7 +169,8 @@ removed. This revokes the installer token. Keep NFD if other consumers use it.
 
 ## Verification scope
 
-The package lifecycle and orchestration tests pass in containers. Fresh NFD
+The package lifecycle and orchestration tests pass in containers. Image builds
+verify the ELF architecture of native tools independently of binfmt emulation. Fresh NFD
 installation through the dedicated bootstrap identity ran on an Ubuntu 26.04
 arm64 Kubernetes VM, where the existing CPU Kata workload remained complete.
 GPU passthrough, GPU mode changes, SNP and TDX have not run on hardware for
