@@ -1,0 +1,91 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
+metadata:
+  name: kata-gpu-snp-on
+  labels:
+    nodewright.nvidia.com/kata-stack: 'true'
+spec:
+  nodeSelectors:
+    matchLabels:
+      kubernetes.io/os: linux
+      nodewright.nvidia.com/kata-profile: kata-gpu-snp-on
+      kubernetes.io/arch: amd64
+  interruptionBudget:
+    count: 1
+  packages:
+    kata-containers:
+      image: ghcr.io/fidencio/kata-containers/test-images
+      version: 4.3.1
+      interrupt:
+        type: noop
+      uninstall:
+        enabled: true
+        apply: false
+      gracefulShutdown: 10m
+      resources:
+        cpuRequest: 250m
+        cpuLimit: '1'
+        memoryRequest: 256Mi
+        memoryLimit: 1Gi
+      env:
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            apiVersion: v1
+            fieldPath: spec.nodeName
+      - name: CONTAINERD_CONFIG_FILE_NAME
+        value: config.toml
+      - name: DEBUG
+        value: 'false'
+      - name: KATA_RUNTIME
+        value: qemu-nvidia-gpu-snp-runtime-rs
+      - name: KATA_STACK_NAME
+        value: kata-gpu-snp-on
+      - name: KATA_STACK_NAMESPACE
+        value: nodewright
+      - name: KATA_STACK_API_HOST
+        value: $(KUBERNETES_SERVICE_HOST)
+      - name: KATA_STACK_API_PORT
+        value: $(KUBERNETES_SERVICE_PORT)
+      - name: KATA_STACK_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: kata-stack-installer-token
+            key: token
+      - name: KATA_STACK_CA
+        valueFrom:
+          secretKeyRef:
+            name: kata-stack-installer-token
+            key: ca.crt
+      containerSHA: sha256:abddb40ebf3c19167f8daeb4932c44d7cfebe93c5c1b8c5d61da978f45577f07
+      stageTimeout: 45m
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-containers-qemu-nvidia-gpu-snp-runtime-rs
+handler: kata-qemu-nvidia-gpu-snp-runtime-rs
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: linux
+    nodewright.nvidia.com/kata-runtime-ready: kata-qemu-nvidia-gpu-snp-runtime-rs
+    nvidia.com/cc.ready.state: 'true'
+overhead:
+  podFixed:
+    sev-snp.amd.com/esids: '1'

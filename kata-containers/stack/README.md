@@ -11,6 +11,17 @@ The three package images contain Kata 4.3.1, kata-device-provisioner
 The manifests pin published test images by digest. SNP and TDX CC-on use the
 same image with different runtime selections. PPCIE supports TDX only.
 
+## Published POC images
+
+All images use repository `ghcr.io/fidencio/kata-containers/test-images`.
+The manifests pin their immutable digests rather than relying on tags.
+
+| Mode | Tag | Architectures |
+| --- | --- | --- |
+| CC-off | `nodewright-4.3.1-cc-off-4bcf9b7` | amd64, arm64 |
+| CC-on | `nodewright-4.3.1-cc-on-4bcf9b7` | amd64 |
+| PPCIE | `nodewright-4.3.1-ppcie-4bcf9b7` | amd64 |
+
 ## Requirements
 
 Start with Kubernetes and a running containerd service. The NodeWright
