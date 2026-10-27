@@ -3,8 +3,8 @@
 This profile installs `qemu-nvidia-gpu-runtime-rs`, registered with containerd as
 `kata-qemu-nvidia-gpu-runtime-rs`. CPU remains the package default. Both profiles
 use the same Kata-versioned package image and EROFS memory mode with guest
-dm-verity. SNP, TDX, confidential GPU provisioning and nydus are outside this
-integration.
+dm-verity. [GPU CC deployment](GPU-CC.md) covers the SNP/TDX profiles and their
+Nydus snapshotter.
 
 ## Host prerequisites
 
@@ -56,12 +56,14 @@ helm upgrade --install kata-device-provisioner \
   --version 0.1.0-alpha.1 \
   --namespace kata-system --create-namespace \
   --values kata-containers/kata-device-provisioner-gpu.values.yaml \
+  --reuse-values \
   --wait --wait-for-jobs --timeout 40m
 kubectl wait --for=jsonpath='{.metadata.labels.nodewright\.nvidia\.com/kata-gpu-mode}'=off \
   node/<node> --timeout=5m
 ```
 
-This is an upstream prerelease. The provisioner refuses busy devices, performs
+This is an upstream prerelease. All GPU profiles share this provisioner release;
+`--reuse-values` preserves any SNP/TDX profiles already configured in it. The provisioner refuses busy devices, performs
 any required mode change and reset, writes persistent boot configuration, binds
 the devices and verifies the hardware before publishing readiness labels.
 Already prepared devices converge without an unnecessary mode change.
@@ -168,8 +170,14 @@ removing the remaining resources:
 
 ```bash
 helm uninstall kata-device-plugin --namespace kata-device-plugin
-helm uninstall kata-device-provisioner --namespace kata-system
 kubectl delete -f kata-containers/nvidia-gpu-runtimeclass.yaml
+```
+
+The provisioner release is shared with any CC profiles. Uninstall it only
+after all of its workloads and Kata installations have been removed:
+
+```bash
+helm uninstall kata-device-provisioner --namespace kata-system
 ```
 
 Uninstalling the provisioner removes persistent binding configuration; it does

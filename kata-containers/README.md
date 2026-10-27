@@ -3,20 +3,25 @@
 The `kata-containers` package defaults to `qemu-nvidia-cpu-runtime-rs`,
 registered with containerd as `kata-qemu-nvidia-cpu-runtime-rs`. It also supports
 the non-confidential `qemu-nvidia-gpu-runtime-rs` profile described in
-[GPU deployment](GPU.md). It uses standalone
+[GPU deployment](GPU.md), plus the SNP and TDX GPU Rust profiles described in
+[confidential GPU deployment](GPU-CC.md). It uses standalone
 containerd with `containerd.service`, EROFS memory mode and dm-verity, and the
 default `/opt/kata` paths. The tested Kubernetes setup uses kubeadm; the package
 does not invoke kubeadm. K3s/RKE2, MicroK8s and CRI-O are not supported here.
 
-The node needs Linux amd64/arm64, systemd, KVM, containerd >= 2.2 and
-`erofs-utils >= 1.8.2`. The CPU profile has no GPU dependencies. The GPU profile
-requires NFD first, then kata-device-provisioner to establish CC-off passthrough
-devices, and kata-device-plugin to advertise them. GPU Operator is not a
+The node needs Linux, systemd, KVM and containerd >= 2.2. CPU and basic GPU
+profiles support amd64/arm64 and need `erofs-utils >= 1.8.2`. SNP and TDX GPU
+profiles require amd64 and the corresponding enabled CPU TEE; their Nydus
+snapshotter is installed by the package. The CPU profile has no GPU dependencies. The GPU profile
+requires NFD first, then kata-device-provisioner to establish the selected
+mode and persistent passthrough devices, and kata-device-plugin to advertise
+them. Basic GPUs use explicit CC-off mode; CC profiles require an explicit
+board-appropriate `on` or `ppcie` mode. GPU Operator is not a
 dependency. CPU and basic GPU profiles do not require nydus.
 CPU end-to-end validation covers Ubuntu 26.04 on arm64 with erofs-utils 1.9.1.
 GPU passthrough and amd64 execution have not been validated on hardware.
 
-Stock Ubuntu 24.04 is insufficient: its
+For CPU and basic GPU profiles, stock Ubuntu 24.04 is insufficient: its
 [erofs-utils 1.7.1 package](https://packages.ubuntu.com/noble/erofs-utils)
 lacks the required `mkfs.erofs` options. Use Ubuntu 26.04 for the validated path.
 Using 24.04 requires separately provisioning compatible erofs-utils and
@@ -138,19 +143,25 @@ so its configuration can be cleaned up, then install with the new value.
 
 ## Configuration and lifecycle
 
-The adapter selects one NVIDIA Rust shim and EROFS. `KATA_RUNTIME` defaults to
-`qemu-nvidia-cpu-runtime-rs`; the GPU manifest selects
-`qemu-nvidia-gpu-runtime-rs`. Other runtimes, including SNP and TDX, are rejected. The
+The adapter selects one NVIDIA Rust shim per node. `KATA_RUNTIME` defaults to
+`qemu-nvidia-cpu-runtime-rs`. CPU and basic GPU profiles use EROFS;
+`qemu-nvidia-gpu-snp-runtime-rs` and `qemu-nvidia-gpu-tdx-runtime-rs` install
+and use Nydus. Other runtimes are rejected. The
 `containerd-user-dropin.toml` ConfigMap key disables host fs-verity for broad
 host filesystem compatibility, matching Kata's NVIDIA profile; guest dm-verity
 remains enabled. Runtime overrides use
 `dropin-qemu-nvidia-cpu-runtime-rs.toml` or
-`dropin-qemu-nvidia-gpu-runtime-rs.toml`, matching the selected profile.
+`dropin-qemu-nvidia-gpu-runtime-rs.toml` for basic GPUs. CC profiles use
+`dropin-qemu-nvidia-gpu-snp-runtime-rs.toml` or
+`dropin-qemu-nvidia-gpu-tdx-runtime-rs.toml`. Match the selected profile.
 
 Apply/upgrade validates the configuration. The config stage runs the finite
 installer, including when ConfigMap values change without a Kata version bump.
-Keep both the package's `noop` interrupt and its wildcard `configInterrupts`
-entry so host changes run through NodeWright's cordon/drain flow. Kata-deploy
+Keep the package's `noop` interrupt so host changes run through NodeWright's
+cordon/drain flow. CPU and basic GPU manifests also carry a wildcard
+`configInterrupts` entry for their ConfigMap. CC defaults have no ConfigMap;
+when adding runtime overrides, add a matching `configInterrupts` entry with
+`type: noop` as well. Kata-deploy
 performs the actual containerd restart. The interruption budget defaults to
 one node.
 

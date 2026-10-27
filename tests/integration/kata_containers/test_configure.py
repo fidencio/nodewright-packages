@@ -163,3 +163,68 @@ def test_basic_gpu_requires_nfd_and_verified_cc_off():
     assert labels["kata.feature.node.kubernetes.io/nvidia-gpu"] == "true"
     assert profile["nodeSelector"]["nodewright.nvidia.com/kata-profile"] == labels["nodewright.nvidia.com/kata-profile"]
     assert profile["nodeSelector"]["kata.feature.node.kubernetes.io/nvidia-gpu"] == "true"
+
+
+@pytest.mark.parametrize("tee,feature,key", [
+    ("snp", "amd.feature.node.kubernetes.io/snp", "sev-snp.amd.com/esids"),
+    ("tdx", "intel.feature.node.kubernetes.io/tdx", "tdx.intel.com/keys"),
+])
+def test_cc_manifests_require_discovery_provisioning_and_runtime_completion(tee, feature, key):
+    resource = yaml.safe_load((PACKAGE / f"nodewright-gpu-{tee}.yaml").read_text())
+    runtime = yaml.safe_load((PACKAGE / f"nvidia-gpu-{tee}-runtimeclass.yaml").read_text())
+    provisioner = yaml.safe_load((PACKAGE / f"kata-device-provisioner-{tee}.values.yaml").read_text())
+    plugin = yaml.safe_load((PACKAGE / f"kata-device-plugin-{tee}.values.yaml").read_text())
+    pod = yaml.safe_load((PACKAGE / f"gpu-{tee}-pod.yaml").read_text())
+    name = f"kata-containers-gpu-{tee}"
+    handler = f"qemu-nvidia-gpu-{tee}-runtime-rs"
+    mode_key = f"nodewright.nvidia.com/kata-gpu-{tee}-mode"
+    assert resource["metadata"]["name"] == name
+    assert provisioner["node-feature-discovery"]["enabled"] is False
+    profile = provisioner["profiles"][tee]
+    assert profile["enabled"] is True
+    assert "ccMode" not in profile  # The caller must choose a board-appropriate mode.
+    assert profile["ccModeStateLabel"] == mode_key
+    assert profile["nodeFeatureRule"]["enabled"] is True
+    labels = resource["spec"]["nodeSelectors"]["matchLabels"]
+    assert labels == {**profile["nodeSelector"], "nvidia.com/cc.ready.state": "true"}
+    assert labels[feature] == "true"
+    assert labels["kubernetes.io/arch"] == "amd64"
+    assert labels["nodewright.nvidia.com/kata-profile"] == name
+    assert resource["spec"]["nodeSelectors"]["matchExpressions"] == [
+        {"key": mode_key, "operator": "In", "values": ["on", "ppcie"]}]
+    package = resource["spec"]["packages"]["kata-containers"]
+    assert package["version"] == json.loads((PACKAGE / "config.json").read_text())["package_version"]
+    env = {entry["name"]: entry.get("value") for entry in package["env"]}
+    assert env["KATA_RUNTIME"] == handler
+    assert "CONTAINER_RUNTIME_VERSION" not in env
+    assert "configMap" not in package  # No EROFS host drop-in on a Nydus profile.
+    assert "configInterrupts" not in package  # A glob without ConfigMap keys fails admission.
+    assert "dependsOn" not in package
+    assert runtime["handler"] == f"kata-{handler}"
+    assert runtime["overhead"]["podFixed"] == {key: "1"}
+    ready = runtime["scheduling"]["nodeSelector"]
+    assert ready == {"kubernetes.io/os": "linux", "kubernetes.io/arch": "amd64",
+                     feature: "true", f"nodewright.nvidia.com/status_{name}": "complete",
+                     "nvidia.com/cc.ready.state": "true"}
+    assert plugin["nodeSelector"] == {"katacontainers.io/kata-runtime": None, **ready}
+    assert plugin["resourceNaming"] == "alias"
+    assert pod["spec"]["runtimeClassName"] == runtime["metadata"]["name"]
+    assert pod["spec"]["containers"][0]["resources"]["limits"] == {"nvidia.com/gpu": 1}
+
+
+def test_nfd_tee_resource_rules_match_runtimeclass_accounting():
+    discovery = yaml.safe_load((PACKAGE / "tee-node-feature-rule.yaml").read_text())
+    assert discovery["apiVersion"] == "nfd.k8s-sigs.io/v1alpha1"
+    assert discovery["kind"] == "NodeFeatureRule"
+    expected = {
+        "amd.sev-snp": ("snp", "amd.feature.node.kubernetes.io/snp", "sev-snp.amd.com/esids", "sev.snp.enabled", "sev.encrypted_state_ids"),
+        "intel.tdx": ("tdx", "intel.feature.node.kubernetes.io/tdx", "tdx.intel.com/keys", "tdx.enabled", "tdx.total_keys"),
+    }
+    for rule in discovery["spec"]["rules"]:
+        tee, label, key, enabled, count = expected.pop(rule["name"])
+        assert rule["labels"] == {label: "true"}
+        assert rule["matchFeatures"] == [{"feature": "cpu.security", "matchExpressions": {enabled: {"op": "Exists"}}}]
+        assert rule["extendedResources"] == {key: f"@cpu.security.{count}"}
+        runtime = yaml.safe_load((PACKAGE / f"nvidia-gpu-{tee}-runtimeclass.yaml").read_text())
+        assert runtime["overhead"]["podFixed"] == {key: "1"}
+    assert not expected
