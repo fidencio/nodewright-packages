@@ -62,10 +62,14 @@ def test_validation_does_not_mount(base_image, action, code):
     assert lines == []
 
 
-def test_installs_cpu_erofs_with_private_mounts(base_image):
-    result, lines, selection = run_action(base_image, env={"SHIMS_AARCH64": "qemu-nvidia-gpu-runtime-rs"})
+@pytest.mark.parametrize("architecture", ["x86_64", "aarch64"])
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-cpu-runtime-rs", "qemu-nvidia-gpu-runtime-rs"])
+def test_installs_selected_runtime_with_private_mounts(base_image, architecture, runtime):
+    result, lines, selection = run_action(
+        base_image, env={"KATA_RUNTIME": runtime, "TEST_ARCH": architecture,
+                         "SHIMS_AARCH64": "qemu-nvidia-gpu-tdx-runtime-rs"},
+    )
     assert result.exit_code == 0, result.stdout
-    runtime = "qemu-nvidia-cpu-runtime-rs"
     assert selection == f"{runtime}|erofs|{runtime}:erofs|config.toml"
     assert lines[0] == "mount --make-rprivate /"
     for mount in ("mount --bind /root /host", "mount --bind /root/opt/kata /opt/kata",
@@ -170,3 +174,42 @@ def test_host_wrapper_rejects_failed_version_detection_before_mounting(base_imag
     assert result.exit_code != 0
     assert "containerd server" in result.stdout
     assert len(lines) == 1 and lines[0].startswith("ctr ")
+
+
+@pytest.mark.parametrize("runtime", ["qemu", "qemu-nvidia-gpu", "qemu-nvidia-gpu-snp-runtime-rs",
+                                     "qemu-nvidia-gpu-tdx-runtime-rs", "not-a-runtime"])
+def test_rejects_unimplemented_profiles_before_mounting(base_image, runtime):
+    result, lines, _ = run_action(base_image, script="run.sh", env={"KATA_RUNTIME": runtime})
+    assert result.exit_code != 0
+    assert "KATA_RUNTIME" in result.stdout
+    assert lines == []
+
+
+def test_gpu_uninstall_selects_the_gpu_profile(base_image):
+    result, lines, selection = run_action(base_image, action="uninstall",
+                                         env={"KATA_RUNTIME": "qemu-nvidia-gpu-runtime-rs"})
+    assert result.exit_code == 0, result.stdout
+    assert selection == "qemu-nvidia-gpu-runtime-rs|erofs|qemu-nvidia-gpu-runtime-rs:erofs|config.toml"
+    assert lines.index("kata-deploy cleanup-stage-revert-cri") < lines.index("kata-deploy cleanup-stage-remove-artifacts")
+
+
+@pytest.mark.parametrize("runtime,other", [
+    ("qemu-nvidia-cpu-runtime-rs", "qemu-nvidia-gpu-runtime-rs"),
+    ("qemu-nvidia-gpu-runtime-rs", "qemu-nvidia-cpu-runtime-rs"),
+])
+def test_host_check_requires_the_selected_profile_config(base_image, runtime, other):
+    with DockerTestRunner(package="kata-containers", base_image=base_image) as runner:
+        result = runner.run_script(script="run.sh", script_args=["validate"],
+                                   env_vars={**BASE_ENV, "KATA_RUNTIME": runtime}, extra_files=EXTRA_FILES)
+        assert result.exit_code == 0, result.stdout
+        setup = runner.container.exec_run(["bash", "-ec",
+            "/bin/mkdir -p /opt/kata/runtime-rs/bin /opt/kata/share/defaults/kata-containers/runtime-rs; "
+            "cp /bin/true /opt/kata/runtime-rs/bin/containerd-shim-kata-v2; "
+            f"printf config > /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-{other}.toml"])
+        assert setup.exit_code == 0, setup.output
+        command = ["bash", "/skyhook-package/skyhook_dir/run.sh", "check-installed"]
+        assert runner.container.exec_run(command).exit_code != 0
+        installed = runner.container.exec_run(["bash", "-ec",
+            f"printf config > /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-{runtime}.toml"])
+        assert installed.exit_code == 0, installed.output
+        assert runner.container.exec_run(command).exit_code == 0

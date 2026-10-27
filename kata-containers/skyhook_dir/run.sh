@@ -40,11 +40,12 @@ if [[ -z ${CONTAINER_RUNTIME_VERSION:-} ]]; then
 fi
 
 bash "${STEP_ROOT:?}/run-inner.sh" validate
+runtime="${KATA_RUNTIME:-qemu-nvidia-cpu-runtime-rs}"
 case "${action}" in
     validate) exit 0 ;;
     check-installed)
         test -x /opt/kata/runtime-rs/bin/containerd-shim-kata-v2
-        test -s /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-qemu-nvidia-cpu-runtime-rs.toml
+        test -s "/opt/kata/share/defaults/kata-containers/runtime-rs/configuration-${runtime}.toml"
         exit 0
         ;;
     check-removed)

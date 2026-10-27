@@ -49,7 +49,11 @@ case "$(uname -m)" in
     x86_64|aarch64|arm64) ;;
     *) echo 'unsupported node architecture' >&2; exit 1 ;;
 esac
-runtime=qemu-nvidia-cpu-runtime-rs
+runtime="${KATA_RUNTIME:-qemu-nvidia-cpu-runtime-rs}"
+case "${runtime}" in
+    qemu-nvidia-cpu-runtime-rs|qemu-nvidia-gpu-runtime-rs) ;;
+    *) echo 'KATA_RUNTIME must select the NVIDIA CPU or non-confidential GPU Rust runtime' >&2; exit 1 ;;
+esac
 export SHIMS_X86_64="$runtime" SHIMS_AARCH64="$runtime"
 export DEFAULT_SHIM_X86_64="$runtime" DEFAULT_SHIM_AARCH64="$runtime"
 export SNAPSHOTTER_HANDLER_MAPPING_X86_64="$runtime:erofs"
