@@ -24,7 +24,7 @@ from tests.helpers.docker_test import DockerTestRunner
 
 
 STUB = Path(__file__).parent / "fakes/host-command.sh"
-EXTRA_FILES = [(STUB, f"test-bin/{name}") for name in ("mount", "mkdir", "touch", "kata-deploy", "uname", "unshare", "chroot", "ctr")]
+EXTRA_FILES = [(STUB, f"test-bin/{name}") for name in ("mount", "mkdir", "touch", "kata-deploy", "uname", "unshare", "chroot", "ctr", "systemctl")]
 BASE_ENV = {
     "PATH": "/skyhook-package/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "TRACE": "/tmp/kata-trace", "ENV_TRACE": "/tmp/kata-env", "NODE_NAME": "test-node",
@@ -176,8 +176,8 @@ def test_host_wrapper_rejects_failed_version_detection_before_mounting(base_imag
     assert len(lines) == 1 and lines[0].startswith("ctr ")
 
 
-@pytest.mark.parametrize("runtime", ["qemu", "qemu-nvidia-gpu", "qemu-nvidia-gpu-snp-runtime-rs",
-                                     "qemu-nvidia-gpu-tdx-runtime-rs", "not-a-runtime"])
+@pytest.mark.parametrize("runtime", ["qemu", "qemu-nvidia-gpu", "qemu-snp-runtime-rs",
+                                     "qemu-nvidia-gpu-tdx", "not-a-runtime"])
 def test_rejects_unimplemented_profiles_before_mounting(base_image, runtime):
     result, lines, _ = run_action(base_image, script="run.sh", env={"KATA_RUNTIME": runtime})
     assert result.exit_code != 0
@@ -212,4 +212,82 @@ def test_host_check_requires_the_selected_profile_config(base_image, runtime, ot
         installed = runner.container.exec_run(["bash", "-ec",
             f"printf config > /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-{runtime}.toml"])
         assert installed.exit_code == 0, installed.output
+        assert runner.container.exec_run(command).exit_code == 0
+
+
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-gpu-snp-runtime-rs", "qemu-nvidia-gpu-tdx-runtime-rs"])
+@pytest.mark.parametrize("action", ["install", "uninstall"])
+def test_cc_profiles_select_nydus(base_image, runtime, action):
+    result, lines, selection = run_action(base_image, action=action,
+                                         env={"KATA_RUNTIME": runtime, "TEST_ARCH": "x86_64"})
+    assert result.exit_code == 0, result.stdout
+    assert selection == f"{runtime}|nydus|{runtime}:nydus|config.toml"
+    if action == "install":
+        assert lines.index("kata-deploy install-stage-artifacts") < lines.index("kata-deploy install-stage-cri")
+    else:
+        assert lines.index("kata-deploy cleanup-stage-revert-cri") < lines.index("kata-deploy cleanup-stage-remove-artifacts")
+
+
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-gpu-snp-runtime-rs", "qemu-nvidia-gpu-tdx-runtime-rs"])
+@pytest.mark.parametrize("architecture", ["aarch64", "arm64"])
+def test_cc_rejects_arm_nodes_before_mounting(base_image, runtime, architecture):
+    result, lines, _ = run_action(base_image, script="run.sh",
+                                 env={"KATA_RUNTIME": runtime, "TEST_ARCH": architecture})
+    assert result.exit_code != 0
+    assert "require an amd64 node" in result.stdout
+    assert lines == []
+
+
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-gpu-snp-runtime-rs", "qemu-nvidia-gpu-tdx-runtime-rs"])
+def test_cc_snapshotter_install_failure_stops_cri_configuration(base_image, runtime):
+    result, lines, _ = run_action(base_image, env={
+        "KATA_RUNTIME": runtime, "TEST_ARCH": "x86_64",
+        "FAIL_COMMAND": "kata-deploy install-stage-artifacts",
+    })
+    assert result.exit_code == 7
+    assert "kata-deploy install-stage-cri" not in lines
+
+
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-gpu-snp-runtime-rs", "qemu-nvidia-gpu-tdx-runtime-rs"])
+def test_cc_host_check_requires_active_nydus(base_image, runtime):
+    with DockerTestRunner(package="kata-containers", base_image=base_image) as runner:
+        result = runner.run_script(script="run.sh", script_args=["validate"],
+                                   env_vars={**BASE_ENV, "KATA_RUNTIME": runtime, "TEST_ARCH": "x86_64"},
+                                   extra_files=EXTRA_FILES)
+        assert result.exit_code == 0, result.stdout
+        setup = runner.container.exec_run(["bash", "-ec",
+            "/bin/mkdir -p /opt/kata/runtime-rs/bin /opt/kata/share/defaults/kata-containers/runtime-rs; "
+            "cp /bin/true /opt/kata/runtime-rs/bin/containerd-shim-kata-v2; "
+            f"printf config > /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-{runtime}.toml"])
+        assert setup.exit_code == 0, setup.output
+        command = ["bash", "/skyhook-package/skyhook_dir/run.sh", "check-installed"]
+        assert runner.container.exec_run(command).exit_code != 0
+        setup = runner.container.exec_run(["bash", "-ec",
+            "/bin/mkdir -p /opt/kata/nydus-for-kata-tee; "
+            "cp /bin/true /opt/kata/nydus-for-kata-tee/containerd-nydus-grpc"])
+        assert setup.exit_code == 0, setup.output
+        assert runner.container.exec_run(command).exit_code == 0
+        result = runner.container.exec_run(command, environment={
+            "FAIL_COMMAND": "systemctl is-active --quiet nydus-for-kata-tee.service"})
+        assert result.exit_code != 0
+
+
+@pytest.mark.parametrize("runtime", ["qemu-nvidia-gpu-snp-runtime-rs", "qemu-nvidia-gpu-tdx-runtime-rs"])
+@pytest.mark.parametrize("leftover", [
+    "/opt/kata/nydus-for-kata-tee/containerd-nydus-grpc",
+    "/etc/systemd/system/nydus-for-kata-tee.service",
+])
+def test_cc_removed_check_rejects_leftover_snapshotter(base_image, runtime, leftover):
+    with DockerTestRunner(package="kata-containers", base_image=base_image) as runner:
+        result = runner.run_script(script="run.sh", script_args=["validate"],
+                                   env_vars={**BASE_ENV, "KATA_RUNTIME": runtime, "TEST_ARCH": "x86_64"},
+                                   extra_files=EXTRA_FILES)
+        assert result.exit_code == 0, result.stdout
+        parent = str(Path(leftover).parent)
+        setup = runner.container.exec_run(["bash", "-ec",
+            f"/bin/mkdir -p {parent}; printf leftover > {leftover}"])
+        assert setup.exit_code == 0, setup.output
+        command = ["bash", "/skyhook-package/skyhook_dir/run.sh", "check-removed"]
+        assert runner.container.exec_run(command).exit_code != 0
+        assert runner.container.exec_run(["/bin/rm", leftover]).exit_code == 0
         assert runner.container.exec_run(command).exit_code == 0

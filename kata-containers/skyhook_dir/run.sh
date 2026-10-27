@@ -46,10 +46,22 @@ case "${action}" in
     check-installed)
         test -x /opt/kata/runtime-rs/bin/containerd-shim-kata-v2
         test -s "/opt/kata/share/defaults/kata-containers/runtime-rs/configuration-${runtime}.toml"
+        case "${runtime}" in
+            qemu-nvidia-gpu-snp-runtime-rs|qemu-nvidia-gpu-tdx-runtime-rs)
+                test -x /opt/kata/nydus-for-kata-tee/containerd-nydus-grpc
+                systemctl is-active --quiet nydus-for-kata-tee.service
+                ;;
+        esac
         exit 0
         ;;
     check-removed)
         test ! -e /opt/kata/runtime-rs/bin/containerd-shim-kata-v2
+        case "${runtime}" in
+            qemu-nvidia-gpu-snp-runtime-rs|qemu-nvidia-gpu-tdx-runtime-rs)
+                test ! -e /opt/kata/nydus-for-kata-tee/containerd-nydus-grpc
+                test ! -e /etc/systemd/system/nydus-for-kata-tee.service
+                ;;
+        esac
         exit 0
         ;;
 esac

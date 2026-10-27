@@ -45,20 +45,28 @@ case "${CONTAINERD_CONFIG_FILE_NAME}" in
         ;;
 esac
 
-case "$(uname -m)" in
+node_arch="$(uname -m)"
+case "${node_arch}" in
     x86_64|aarch64|arm64) ;;
     *) echo 'unsupported node architecture' >&2; exit 1 ;;
 esac
 runtime="${KATA_RUNTIME:-qemu-nvidia-cpu-runtime-rs}"
 case "${runtime}" in
-    qemu-nvidia-cpu-runtime-rs|qemu-nvidia-gpu-runtime-rs) ;;
-    *) echo 'KATA_RUNTIME must select the NVIDIA CPU or non-confidential GPU Rust runtime' >&2; exit 1 ;;
+    qemu-nvidia-cpu-runtime-rs|qemu-nvidia-gpu-runtime-rs) snapshotter=erofs ;;
+    qemu-nvidia-gpu-snp-runtime-rs|qemu-nvidia-gpu-tdx-runtime-rs)
+        if [[ "${node_arch}" != x86_64 ]]; then
+            echo 'confidential GPU Rust runtimes require an amd64 node' >&2
+            exit 1
+        fi
+        snapshotter=nydus
+        ;;
+    *) echo 'KATA_RUNTIME must select a supported NVIDIA Rust runtime' >&2; exit 1 ;;
 esac
 export SHIMS_X86_64="$runtime" SHIMS_AARCH64="$runtime"
 export DEFAULT_SHIM_X86_64="$runtime" DEFAULT_SHIM_AARCH64="$runtime"
-export SNAPSHOTTER_HANDLER_MAPPING_X86_64="$runtime:erofs"
-export SNAPSHOTTER_HANDLER_MAPPING_AARCH64="$runtime:erofs"
-export EXPERIMENTAL_SETUP_SNAPSHOTTER=erofs
+export SNAPSHOTTER_HANDLER_MAPPING_X86_64="${runtime}:${snapshotter}"
+export SNAPSHOTTER_HANDLER_MAPPING_AARCH64="${runtime}:${snapshotter}"
+export EXPERIMENTAL_SETUP_SNAPSHOTTER="${snapshotter}"
 export EROFS_SNAPSHOTTER_MODE="${EROFS_SNAPSHOTTER_MODE:-memory}"
 export EROFS_DMVERITY="${EROFS_DMVERITY:-dmverity}"
 if [[ "$action" == validate ]]; then
