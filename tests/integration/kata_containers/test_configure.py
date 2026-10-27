@@ -141,7 +141,25 @@ def test_gpu_manifests_keep_cpu_and_gpu_nodes_disjoint():
     assert pod["spec"]["runtimeClassName"] == runtime["metadata"]["name"]
     assert pod["spec"]["containers"][0]["resources"]["limits"] == {"nvidia.com/gpu": 1}
     completion = f"nodewright.nvidia.com/status_{gpu['metadata']['name']}"
-    assert runtime["scheduling"]["nodeSelector"] == {"kubernetes.io/os": "linux", completion: "complete"}
+    assert runtime["scheduling"]["nodeSelector"] == {"kubernetes.io/os": "linux", completion: "complete",
+        "nodewright.nvidia.com/kata-gpu-mode": "off", "nvidia.com/cc.ready.state": "false"}
     assert plugin["nodeSelector"] == {
-        "katacontainers.io/kata-runtime": None, "kubernetes.io/os": "linux", completion: "complete"}
+        "katacontainers.io/kata-runtime": None, "kubernetes.io/os": "linux", completion: "complete",
+        "nodewright.nvidia.com/kata-gpu-mode": "off", "nvidia.com/cc.ready.state": "false"}
     assert plugin["resourceNaming"] == "alias"
+
+
+def test_basic_gpu_requires_nfd_and_verified_cc_off():
+    provisioner = yaml.safe_load((PACKAGE / "kata-device-provisioner-gpu.values.yaml").read_text())
+    gpu = yaml.safe_load((PACKAGE / "nodewright-gpu.yaml").read_text())
+    assert provisioner["node-feature-discovery"]["enabled"] is False
+    profile = provisioner["profiles"]["gpu"]
+    assert profile["enabled"] is True
+    assert profile["ccMode"] == "off"
+    assert profile["nodeFeatureRule"]["enabled"] is True
+    labels = gpu["spec"]["nodeSelectors"]["matchLabels"]
+    assert labels[profile["ccModeStateLabel"]] == "off"
+    assert labels["nvidia.com/cc.ready.state"] == "false"
+    assert labels["kata.feature.node.kubernetes.io/nvidia-gpu"] == "true"
+    assert profile["nodeSelector"]["nodewright.nvidia.com/kata-profile"] == labels["nodewright.nvidia.com/kata-profile"]
+    assert profile["nodeSelector"]["kata.feature.node.kubernetes.io/nvidia-gpu"] == "true"

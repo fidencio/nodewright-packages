@@ -10,9 +10,9 @@ does not invoke kubeadm. K3s/RKE2, MicroK8s and CRI-O are not supported here.
 
 The node needs Linux amd64/arm64, systemd, KVM, containerd >= 2.2 and
 `erofs-utils >= 1.8.2`. The CPU profile has no GPU dependencies. The GPU profile
-requires kata-device-plugin and externally prepared passthrough devices.
-GPU Operator, NFD, kata-device-provisioner and nydus are not dependencies of
-either profile.
+requires NFD first, then kata-device-provisioner to establish CC-off passthrough
+devices, and kata-device-plugin to advertise them. GPU Operator is not a
+dependency. CPU and basic GPU profiles do not require nydus.
 CPU end-to-end validation covers Ubuntu 26.04 on arm64 with erofs-utils 1.9.1.
 GPU passthrough and amd64 execution have not been validated on hardware.
 

@@ -23,6 +23,9 @@ spec:
     matchLabels:
       nodewright.nvidia.com/kata-profile: kata-containers-gpu
       kubernetes.io/os: linux
+      nodewright.nvidia.com/kata-gpu-mode: "off"
+      nvidia.com/cc.ready.state: "false"
+      kata.feature.node.kubernetes.io/nvidia-gpu: "true"
     matchExpressions:
     - key: kubernetes.io/arch
       operator: In

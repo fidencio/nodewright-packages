@@ -23,3 +23,5 @@ scheduling:
   nodeSelector:
     kubernetes.io/os: linux
     nodewright.nvidia.com/status_kata-containers-gpu: complete
+    nodewright.nvidia.com/kata-gpu-mode: "off"
+    nvidia.com/cc.ready.state: "false"
